@@ -7,6 +7,7 @@
 1. Frontend extracts scripts and proprocesses$_{[2]}$ them
 1. Frontend sends html to Backend to receive `html_response`$_{[3]}$
 1. Frontend sends scripts to Backend to receive `scripts_response`$_{[4]}$
+1. Frontend accepts feedback from the users$_{[5]}$
 
 ### 1 - HTML preprocessing
 
@@ -47,6 +48,10 @@ This should contain the results of the LLM's analysis of the scripts including b
 - List of probabilties of each script containing malware
 - Severity of the webpage risk
 - Suggested action
+
+### 5 - Accepting Feedback
+
+Fill this
 
 ## Webpage Modifications
 
