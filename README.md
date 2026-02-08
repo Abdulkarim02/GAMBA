@@ -3,11 +3,19 @@
 ## Activity Flow
 
 1. User visits a website
-1. Frontend extracts html and preprocesses $_{[1]}$ it
-1. Frontend extracts scripts and proprocesses $_{[2]}$ them
-1. Frontend sends html to Backend to receive `html_response` $_{[3]}$
-1. Frontend sends scripts to Backend to receive `scripts_response` $_{[4]}$
-1. Frontend accepts feedback from the users $_{[5]}$
+2. Check mode
+    * AI mode:
+        * Frontend extracts HTML and preprocesses $[1]$ it
+    * Malware mode:
+        * If it isn't in the whitelist:  
+          * Frontend extracts scripts and preprocesses $[2]$ them
+    * Both:
+        * Frontend extracts HTML and preprocesses $[1]$ it
+        * If it isn't in the whitelist:  
+          * Frontend extracts scripts and preprocesses $[2]$ them
+4.  Frontend sends html to Backend to receive `html_response` $_[3]$
+5.  Frontend sends scripts to Backend to receive `scripts_response` $_[4]$
+6.  Frontend accepts feedback from the users $_[5]$
 
 ### 1 - HTML preprocessing
 
