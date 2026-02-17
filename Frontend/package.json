@@ -1,5 +1,5 @@
 {
-      "name": "high-fidelity-ui-design",
+      "name": "High-fidelity UI Design",
       "version": "0.1.0",
       "private": true,
       "dependencies": {
@@ -48,19 +48,11 @@
       },
       "devDependencies": {
             "@types/node": "^20.10.0",
-            "@types/react-dom": "^19.2.3",
             "@vitejs/plugin-react-swc": "^3.10.2",
-            "typescript": "^5.9.3",
-            "vite": "^6.3.5"
+            "vite": "^6.4.1"
       },
       "scripts": {
             "dev": "vite",
             "build": "vite build"
-      },
-      "description": "This is a code bundle for High-fidelity UI Design. The original project is available at https://www.figma.com/design/loV9le3Sul99dS4aoHrHoK/High-fidelity-UI-Design.",
-      "main": "index.js",
-      "keywords": [],
-      "author": "",
-      "license": "ISC",
-      "type": "commonjs"
+      }
 }

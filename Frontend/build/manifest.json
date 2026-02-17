@@ -1,9 +1,10 @@
 {
-    "name": "GAMBA",
+    "name": "GAMBA_new",
     "description": "Generalised AI Browser Assistant",
     "version": "1.0",
     "manifest_version": 3,
     "action": {
-        "default_popup": "index.html"
+        "default_popup": "index.html",
+        "default_icon": "GAMBA_icon.png"
     }
 }
