@@ -6,11 +6,11 @@ import Dexie from 'dexie';
 you should use await when you call the function if you want the output,
 since it will return a promise first then it'll return the desired output
 
-e.g let x = await dbManeger.createConfig(); -> will return the id
-    let x = dbManeger.createConfig(); -> will return the a Promise object
+e.g let x = await dbManager.createConfig(); -> will return the id
+    let x = dbManager.createConfig(); -> will return the a Promise object
 */
 
-export const dbManeger = {
+export const dbManager = {
     async createConfig(System_status: boolean = true, mode : ConfigMode = "Both", AskForFeedback:boolean = true) : Promise<number | undefined>{
         try{
             return await db.configuration.add({// it will return the id
