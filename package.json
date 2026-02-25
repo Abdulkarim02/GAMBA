@@ -1,0 +1,32 @@
+{
+  "name": "gamba",
+  "version": "1.0.0",
+  "description": "1. User visits a website\r 2. Check mode\r     * AI mode:\r         * Frontend extracts HTML and preprocesses $[1]$ it\r     * Malware mode:\r         * If it isn't in the whitelist:  \r           * Frontend extracts scripts and preprocesses $[2]$ them\r     * Both:\r         * Frontend extracts HTML and preprocesses $[1]$ it\r         * If it isn't in the whitelist:  \r           * Frontend extracts scripts and preprocesses $[2]$ them\r 4.  Frontend sends html to Backend to receive `html_response` $_[3]$\r 5.  Frontend sends scripts to Backend to receive `scripts_response` $_[4]$\r 6.  Frontend accepts feedback from the users $_[5]$",
+  "homepage": "https://github.com/Abdulkarim02/GAMBA#readme",
+  "bugs": {
+    "url": "https://github.com/Abdulkarim02/GAMBA/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Abdulkarim02/GAMBA.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "dependencies": {
+    "lucide-react": "^0.575.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.37",
+    "autoprefixer": "^10.4.24",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.2.1"
+  }
+}
