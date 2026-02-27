@@ -1,4 +1,4 @@
-import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
 
 // Ref type — call these from outside to update the display
 export type GambaExtensionRef = {
@@ -8,7 +8,8 @@ export type GambaExtensionRef = {
   setThreatsCount: (count: number) => void;
 };
 import { Power, Sun, Moon, Shield, Play, Pause, Plus, Minus, ChevronDown, Menu, X, MessageSquare } from 'lucide-react';
-
+import { dbManager } from '../db/repository';
+import WhitelistManager from './WhitelistManager';
 
 
 export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtension(_, ref) {
@@ -18,12 +19,47 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
   const [selectedMode, setSelectedMode] = useState('Both');
   const [confidenceScore, setConfidenceScore] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showWhitelistManager, setShowWhitelistManager] = useState(false);
   const [isWhitelisted, setIsWhitelisted] = useState(false);
   const [hasCompletedAnalysis, setHasCompletedAnalysis] = useState(true);
   const [currentUrl, setCurrentUrl] = useState<string>('Loading...');
   const [category, setCategory] = useState<string>('Unknown');
   const [pageEdits, setPageEdits] = useState<number>(0);
   const [threatsCount, setThreatsCount] = useState<number>(0);
+  const CONFIG_ID = 1;
+
+  // Use a ref to track power status for background listeners
+  const isPoweredOnRef = useRef(true);
+  useEffect(() => {
+    isPoweredOnRef.current = isPoweredOn;
+  }, [isPoweredOn]);
+
+  // Helper to normalize the URL to its base domain (to match WhitelistManager logic)
+  const normalizeUrl = (input: string): string | null => {
+    let url = input.trim();
+    if (!url || url === 'Loading...') return null;
+    if (!url.includes("://")) url = "https://" + url;
+    try {
+      const parsed = new URL(url);
+      let hostname = parsed.hostname.toLowerCase();
+      hostname = hostname.replace(/^www\./, "");
+      return (hostname.includes(".") && hostname.length > 3) ? hostname : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Check if current URL is whitelisted whenever URL or Whitelist state changes
+  useEffect(() => {
+    const checkWhitelist = async () => {
+      const normalized = normalizeUrl(currentUrl);
+      if (normalized) {
+        const whitelisted = await dbManager.isWebpageInWhitelist(CONFIG_ID, normalized);
+        setIsWhitelisted(whitelisted);
+      }
+    };
+    checkWhitelist();
+  }, [currentUrl, showWhitelistManager]); // Re-check when returning from Manager or URL changes
 
   // Expose setter functions so parent components can update category & score
   useImperativeHandle(ref, () => ({
@@ -70,6 +106,9 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
 
     // 4. Listen for Storage Changes: When background script finishes a new analysis
     const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+      // If extension is powered off, ignore background storage updates
+      if (!isPoweredOnRef.current) return;
+
       const { data } = (changes.currentAnalysis?.newValue as any) || {};
       if (data) {
         if (data.category) setCategory(data.category);
@@ -89,7 +128,37 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
   }, []);
 
 
+  const handleWhitelistToggle = async () => {
+    const normalized = normalizeUrl(currentUrl);
+    if (!normalized) return;
+
+    try {
+      if (isWhitelisted) {
+        await dbManager.removeWebpageFromWhitelist(CONFIG_ID, normalized);
+        setIsWhitelisted(false);
+      } else {
+        const success = await dbManager.addWebpageToWhitelist(CONFIG_ID, normalized);
+        if (success) setIsWhitelisted(true);
+      }
+    } catch (error) {
+      console.error("Failed to toggle whitelist:", error);
+    }
+  };
+
   const modes = ['AI', 'Malicious Code', 'Both'];
+
+  const handlePowerToggle = () => {
+    const nextPowerState = !isPoweredOn;
+    setIsPoweredOn(nextPowerState);
+    if (!nextPowerState) {
+      setCategory('-');
+      setConfidenceScore(0);
+      setPageEdits(0);
+      setThreatsCount(0);
+      setCurrentUrl('-');
+      setIsRunning(false);
+    }
+  };
 
   const handleReanalyze = () => {
     console.log('Reanalyze clicked. Current URL:', currentUrl);
@@ -112,8 +181,11 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
         { type: 'ANALYZE_URL', url: currentUrl },
         (response) => {
           console.log('Analysis complete response:', response);
-          setIsRunning(false);
-          setHasCompletedAnalysis(true);
+          // Only update UI if the extension is still powered on
+          if (isPoweredOnRef.current) {
+            setIsRunning(false);
+            setHasCompletedAnalysis(true);
+          }
         }
       );
     } else {
@@ -122,8 +194,11 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
         setIsRunning(true);
         setHasCompletedAnalysis(false);
         setTimeout(() => {
-          setIsRunning(false);
-          setHasCompletedAnalysis(true);
+          // Simulation also respects power state
+          if (isPoweredOnRef.current) {
+            setIsRunning(false);
+            setHasCompletedAnalysis(true);
+          }
         }, 2000);
       } else {
         setIsRunning(false);
@@ -260,6 +335,10 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
                 Whitelist
               </div>
               <button
+                onClick={() => {
+                  setShowWhitelistManager(true);
+                  setIsMenuOpen(false);
+                }}
                 className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors ${isDarkMode
                   ? 'bg-slate-800 hover:bg-slate-700'
                   : 'bg-gray-100 hover:bg-gray-200'
@@ -275,248 +354,259 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
           </div>
         </div>
 
-        {/* Content */}
-        <div className="relative z-10 h-full flex flex-col p-5">
-          {/* Header Row */}
-          <div className="flex items-center justify-between mb-6">
-            {/* Power Button */}
-            <button
-              onClick={() => setIsPoweredOn(!isPoweredOn)}
-              className={`w-11 h-11 rounded-full flex items-center justify-center transition-all duration-300 ${isPoweredOn
-                ? 'bg-[#007AFF] shadow-lg shadow-[#007AFF]/50 hover:shadow-[#007AFF]/70'
-                : isDarkMode
-                  ? 'bg-slate-700 hover:bg-slate-600'
-                  : 'bg-gray-200 hover:bg-gray-300'
-                }`}
-              style={{
-                boxShadow: isPoweredOn ? '0 0 20px rgba(0, 122, 255, 0.5)' : 'none',
-              }}
-            >
-              <Power
-                className={`w-5 h-5 transition-all duration-300 ${isPoweredOn ? 'text-white' : isDarkMode ? 'text-slate-400' : 'text-gray-600'
+        {/* Whitelist Manager View */}
+        {showWhitelistManager ? (
+          <WhitelistManager
+            isDarkMode={isDarkMode}
+            onBack={() => setShowWhitelistManager(false)}
+          />
+        ) : (
+          <div className="relative z-10 h-full flex flex-col p-5">
+            {/* Header Row */}
+            <div className="relative flex items-center justify-between mb-6 w-full">
+              {/* Power Button */}
+              <button
+                onClick={handlePowerToggle}
+                className={`w-11 h-11 rounded-full flex items-center justify-center transition-all duration-300 ${isPoweredOn
+                  ? 'bg-[#007AFF] shadow-lg shadow-[#007AFF]/50 hover:shadow-[#007AFF]/70'
+                  : isDarkMode
+                    ? 'bg-slate-700 hover:bg-slate-600'
+                    : 'bg-gray-200 hover:bg-gray-300'
                   }`}
-              />
-            </button>
-            {/* This is a "Ghost" div to match the width of the feedback button on the right */}
-            <div className="w-7 h-7" />
+                style={{
+                  boxShadow: isPoweredOn ? '0 0 20px rgba(0, 122, 255, 0.5)' : 'none',
+                }}
+              >
+                <Power
+                  className={`w-5 h-5 transition-all duration-300 ${isPoweredOn ? 'text-white' : isDarkMode ? 'text-slate-400' : 'text-gray-600'
+                    }`}
+                />
+              </button>
+              {/* GAMBA Logo - Absolutely Centered */}
+              <div className={`absolute left-1/2 -translate-x-1/2 text-2xl font-bold tracking-wider ${isDarkMode ? 'text-white' : 'text-slate-900'
+                }`}>
+                GAMBA
+              </div>
 
-            {/* GAMBA Logo */}
-            <div className={`text-2xl font-bold tracking-wider ${isDarkMode ? 'text-white' : 'text-slate-900'
-              }`}>
-              GAMBA
-            </div>
+              {/* Right Side Buttons */}
+              <div className="flex items-center gap-2">
+                {/* Feedback Button - appears after analysis completes */}
+                {hasCompletedAnalysis && (
+                  <button
+                    className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 ${isDarkMode
+                      ? 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'
+                      : 'bg-gray-200 hover:bg-gray-300 text-gray-600 hover:text-gray-900'
+                      }`}
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                  </button>
+                )}
 
-            {/* Right Side Buttons */}
-            <div className="flex items-center gap-2">
-              {/* Feedback Button - appears after analysis completes */}
-              {hasCompletedAnalysis && (
+                {/* Hamburger Menu Button */}
                 <button
-                  className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 ${isDarkMode
-                    ? 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'
-                    : 'bg-gray-200 hover:bg-gray-300 text-gray-600 hover:text-gray-900'
+                  onClick={() => setIsMenuOpen(!isMenuOpen)}
+                  className={`w-11 h-11 rounded-full flex items-center justify-center transition-all duration-300 ${isDarkMode
+                    ? 'bg-slate-700 hover:bg-slate-600 text-white'
+                    : 'bg-gray-200 hover:bg-gray-300 text-slate-900'
                     }`}
                 >
-                  <MessageSquare className="w-4 h-4" />
+                  <Menu className="w-5 h-5" />
                 </button>
-              )}
-
-              {/* Hamburger Menu Button */}
-              <button
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className={`w-11 h-11 rounded-full flex items-center justify-center transition-all duration-300 ${isDarkMode
-                  ? 'bg-slate-700 hover:bg-slate-600 text-white'
-                  : 'bg-gray-200 hover:bg-gray-300 text-slate-900'
-                  }`}
-              >
-                <Menu className="w-5 h-5" />
-              </button>
+              </div>
             </div>
-          </div>
 
-          {/* Hero Section - Status Indicator */}
-          <div className="flex flex-col items-center mb-6">
-            <div
-              className={`w-20 h-20 rounded-full flex items-center justify-center mb-3 transition-all duration-500 ${isPoweredOn
-                ? 'bg-[#28C76F]/20 shadow-lg shadow-[#28C76F]/30'
-                : isDarkMode
-                  ? 'bg-slate-800/50'
-                  : 'bg-gray-200/50'
-                }`}
-              style={{
-                boxShadow: isPoweredOn ? '0 0 30px rgba(40, 199, 111, 0.3)' : 'none',
-              }}
-            >
-              <Shield
-                className={`w-10 h-10 transition-all duration-500 ${isPoweredOn
-                  ? 'text-[#28C76F] animate-pulse'
+            {/* Hero Section - Status Indicator */}
+            <div className="flex flex-col items-center mb-6">
+              <div
+                className={`w-20 h-20 rounded-full flex items-center justify-center mb-3 transition-all duration-500 ${isPoweredOn
+                  ? threatsCount > 0
+                    ? 'bg-[#EA5455]/20 shadow-lg shadow-[#EA5455]/30'
+                    : 'bg-[#28C76F]/20 shadow-lg shadow-[#28C76F]/30'
                   : isDarkMode
-                    ? 'text-slate-600'
-                    : 'text-gray-400'
+                    ? 'bg-slate-800/50'
+                    : 'bg-gray-200/50'
                   }`}
-                style={{ animationDuration: '2s' }}
-              />
+                style={{
+                  boxShadow: isPoweredOn
+                    ? threatsCount > 0
+                      ? '0 0 30px rgba(234, 84, 85, 0.3)'
+                      : '0 0 30px rgba(40, 199, 111, 0.3)'
+                    : 'none',
+                }}
+              >
+                <Shield
+                  className={`w-10 h-10 transition-all duration-500 ${isPoweredOn
+                    ? threatsCount > 0 ? 'text-[#EA5455] animate-pulse' : 'text-[#28C76F] animate-pulse'
+                    : isDarkMode
+                      ? 'text-slate-600'
+                      : 'text-gray-400'
+                    }`}
+                  style={{ animationDuration: threatsCount > 0 ? '1s' : '2s' }}
+                />
+              </div>
+              <div className={`text-lg font-semibold tracking-wide ${isPoweredOn
+                ? threatsCount > 0 ? 'text-[#EA5455]' : 'text-[#28C76F]'
+                : isDarkMode
+                  ? 'text-slate-500'
+                  : 'text-gray-500'
+                }`}>
+                STATUS: {isPoweredOn ? (threatsCount > 0 ? 'NOT SECURE' : 'SECURE') : 'OFFLINE'}
+              </div>
             </div>
-            <div className={`text-lg font-semibold tracking-wide ${isPoweredOn
-              ? 'text-[#28C76F]'
-              : isDarkMode
-                ? 'text-slate-500'
-                : 'text-gray-500'
-              }`}>
-              STATUS: {isPoweredOn ? 'SECURE' : 'OFFLINE'}
-            </div>
-          </div>
 
-          {/* Data Cards */}
-          <div className={`rounded-xl p-4 mb-5 border backdrop-blur-sm ${isDarkMode
-            ? 'bg-slate-800/50 border-slate-700'
-            : 'bg-white/80 border-gray-200 shadow-sm'
-            }`}>
-            {/* Category with Confidence Score */}
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <div className={`text-xs uppercase tracking-wider mb-1 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'
-                  }`}>
-                  Category
+            {/* Data Cards */}
+            <div className={`rounded-xl p-4 mb-5 border backdrop-blur-sm ${isDarkMode
+              ? 'bg-slate-800/50 border-slate-700'
+              : 'bg-white/80 border-gray-200 shadow-sm'
+              }`}>
+              {/* Category with Confidence Score */}
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className={`text-xs uppercase tracking-wider mb-1 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'
+                    }`}>
+                    Category
+                  </div>
+                  <div className={`text-base font-medium ${isDarkMode ? 'text-white' : 'text-slate-900'
+                    }`}>
+                    {category}
+                  </div>
                 </div>
-                <div className={`text-base font-medium ${isDarkMode ? 'text-white' : 'text-slate-900'
-                  }`}>
-                  {category}
+
+                {/* Circular Progress */}
+                <div className="relative w-14 h-14">
+                  <svg className="w-14 h-14 transform -rotate-90">
+                    <circle
+                      cx="28"
+                      cy="28"
+                      r="24"
+                      stroke={isDarkMode ? '#334155' : '#E5E7EB'}
+                      strokeWidth="4"
+                      fill="none"
+                    />
+                    <circle
+                      cx="28"
+                      cy="28"
+                      r="24"
+                      stroke="#007AFF"
+                      strokeWidth="4"
+                      fill="none"
+                      strokeDasharray={`${2 * Math.PI * 24}`}
+                      strokeDashoffset={`${2 * Math.PI * 24 * (1 - confidenceScore / 100)}`}
+                      className="transition-all duration-500"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className={`text-xs font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'
+                      }`}>
+                      {confidenceScore}%
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              {/* Circular Progress */}
-              <div className="relative w-14 h-14">
-                <svg className="w-14 h-14 transform -rotate-90">
-                  <circle
-                    cx="28"
-                    cy="28"
-                    r="24"
-                    stroke={isDarkMode ? '#334155' : '#E5E7EB'}
-                    strokeWidth="4"
-                    fill="none"
-                  />
-                  <circle
-                    cx="28"
-                    cy="28"
-                    r="24"
-                    stroke="#007AFF"
-                    strokeWidth="4"
-                    fill="none"
-                    strokeDasharray={`${2 * Math.PI * 24}`}
-                    strokeDashoffset={`${2 * Math.PI * 24 * (1 - confidenceScore / 100)}`}
-                    className="transition-all duration-500"
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className={`text-xs font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'
+              {/* URL */}
+              <div className="mb-3">
+                <div className={`text-xs uppercase tracking-wider mb-1 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'
+                  }`}>
+                  URL
+                </div>
+                <div
+                  className={`text-sm font-mono truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}
+                  title={currentUrl}
+                >
+                  {currentUrl}
+                </div>
+              </div>
+
+              {/* Modifications */}
+              <div className="mb-3">
+                <div className={`text-xs uppercase tracking-wider mb-1 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'
+                  }`}>
+                  Modifications
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1 rounded-full bg-[#007AFF] text-white text-xs font-medium">
+                    {pageEdits} Page Edits
+                  </span>
+                </div>
+              </div>
+
+              {/* Threats Detected */}
+              <div className="pt-3 border-t border-slate-700/50">
+                <div className={`text-xs uppercase tracking-wider mb-1 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'
+                  }`}>
+                  Threats Detected
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`px-3 py-1 rounded-full text-white text-xs font-medium ${threatsCount > 0 ? 'bg-[#EA5455]' : 'bg-[#28C76F]'
                     }`}>
-                    {confidenceScore}%
+                    {threatsCount} {threatsCount === 1 ? 'Threat' : 'Threats'}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* URL */}
-            <div className="mb-3">
-              <div className={`text-xs uppercase tracking-wider mb-1 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'
-                }`}>
-                URL
-              </div>
-              <div
-                className={`text-sm font-mono truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}
-                title={currentUrl}
-              >
-                {currentUrl}
-              </div>
-            </div>
-
-            {/* Modifications */}
-            <div className="mb-3">
-              <div className={`text-xs uppercase tracking-wider mb-1 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'
-                }`}>
-                Modifications
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="px-3 py-1 rounded-full bg-[#007AFF] text-white text-xs font-medium">
-                  {pageEdits} Page Edits
-                </span>
-              </div>
-            </div>
-
-            {/* Threats Detected */}
-            <div className="pt-3 border-t border-slate-700/50">
-              <div className={`text-xs uppercase tracking-wider mb-1 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'
-                }`}>
-                Threats Detected
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="px-3 py-1 rounded-full bg-[#EA5455] text-white text-xs font-medium">
-                  {threatsCount} Threats
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Control Center */}
-          <div className="mt-auto">
-            {/* Action Row */}
-            <div className="flex gap-3">
-              {/* Reanalyze/Pause Button */}
-              <button
-                onClick={handleReanalyze}
-                disabled={!isPoweredOn}
-                className={`w-32 h-12 rounded-lg flex items-center justify-center gap-2 font-semibold transition-all duration-300 ${!isPoweredOn
-                  ? isDarkMode
-                    ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                  : isRunning
-                    ? 'bg-[#EA5455] hover:bg-[#EA5455]/90 text-white shadow-lg shadow-[#EA5455]/30 hover:shadow-[#EA5455]/50'
-                    : 'bg-[#007AFF] hover:bg-[#007AFF]/90 text-white shadow-lg shadow-[#007AFF]/30 hover:shadow-[#007AFF]/50'
-                  }`}
-              >
-                {isRunning ? (
-                  <>
-                    <Pause className="w-5 h-5" />
-                    <span>Pause</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-5 h-5" />
-                    <span>Reanalyze</span>
-                  </>
-                )}
-              </button>
-
-              {/* Add to Whitelist Button */}
-              <button
-                onClick={() => setIsWhitelisted(!isWhitelisted)}
-                disabled={!isPoweredOn}
-                className={`flex-1 h-12 rounded-lg flex items-center justify-center gap-2 font-semibold transition-all duration-300 ${!isPoweredOn
-                  ? isDarkMode
-                    ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                  : isWhitelisted
+            {/* Control Center */}
+            <div className="mt-auto">
+              {/* Action Row */}
+              <div className="flex gap-3">
+                {/* Reanalyze/Pause Button */}
+                <button
+                  onClick={handleReanalyze}
+                  disabled={!isPoweredOn}
+                  className={`w-32 h-12 rounded-lg flex items-center justify-center gap-2 font-semibold transition-all duration-300 ${!isPoweredOn
                     ? isDarkMode
-                      ? 'bg-slate-700 hover:bg-slate-600 text-white border-2 border-slate-500'
-                      : 'bg-gray-200 hover:bg-gray-300 text-slate-900 border-2 border-gray-400'
-                    : isDarkMode
-                      ? 'border-2 border-slate-600 hover:border-slate-500 text-slate-300 hover:text-white hover:bg-slate-700/50'
-                      : 'border-2 border-gray-300 hover:border-gray-400 text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                  }`}
-              >
-                {isWhitelisted ? (
-                  <Minus className="w-5 h-5" />
-                ) : (
-                  <Plus className="w-5 h-5" />
-                )}
-                <span className="text-sm">
-                  {isWhitelisted ? 'Remove from Whitelist' : 'Add to Whitelist'}
-                </span>
-              </button>
+                      ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : isRunning
+                      ? 'bg-[#EA5455] hover:bg-[#EA5455]/90 text-white shadow-lg shadow-[#EA5455]/30 hover:shadow-[#EA5455]/50'
+                      : 'bg-[#007AFF] hover:bg-[#007AFF]/90 text-white shadow-lg shadow-[#007AFF]/30 hover:shadow-[#007AFF]/50'
+                    }`}
+                >
+                  {isRunning ? (
+                    <>
+                      <Pause className="w-5 h-5" />
+                      <span>Pause</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-5 h-5" />
+                      <span>Reanalyze</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Add to Whitelist Button */}
+                <button
+                  onClick={handleWhitelistToggle}
+                  disabled={!isPoweredOn}
+                  className={`flex-1 h-12 rounded-lg flex items-center justify-center gap-2 font-semibold transition-all duration-300 ${!isPoweredOn
+                    ? isDarkMode
+                      ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : isWhitelisted
+                      ? isDarkMode
+                        ? 'bg-slate-700 hover:bg-slate-600 text-white border-2 border-slate-500'
+                        : 'bg-gray-200 hover:bg-gray-300 text-slate-900 border-2 border-gray-400'
+                      : isDarkMode
+                        ? 'border-2 border-slate-600 hover:border-slate-500 text-slate-300 hover:text-white hover:bg-slate-700/50'
+                        : 'border-2 border-gray-300 hover:border-gray-400 text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    }`}
+                >
+                  {isWhitelisted ? (
+                    <Minus className="w-5 h-5" />
+                  ) : (
+                    <Plus className="w-5 h-5" />
+                  )}
+                  <span className="text-sm">
+                    {isWhitelisted ? 'Remove from Whitelist' : 'Add to Whitelist'}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
