@@ -1,4 +1,5 @@
 {
+      "type": "module",
       "name": "High-fidelity UI Design",
       "version": "0.1.0",
       "private": true,
