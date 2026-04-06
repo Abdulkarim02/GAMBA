@@ -163,7 +163,7 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
   const handleReanalyze = () => {
     console.log('Reanalyze clicked. Current URL:', currentUrl);
 
-    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+    if (typeof chrome !== 'undefined' && chrome.tabs) {
       if (isRunning) {
         console.log('Analysis already in progress...');
         return;
@@ -177,24 +177,42 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
       setIsRunning(true);
       setHasCompletedAnalysis(false);
 
-      chrome.runtime.sendMessage(
-        { type: 'ANALYZE_URL', url: currentUrl },
-        (response) => {
-          console.log('Analysis complete response:', response);
-          // Only update UI if the extension is still powered on
-          if (isPoweredOnRef.current) {
-            setIsRunning(false);
-            setHasCompletedAnalysis(true);
-          }
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tabId = tabs[0]?.id;
+
+        if (!tabId) {
+          console.error('No active tab found');
+          setIsRunning(false);
+          return;
         }
-      );
+
+        chrome.tabs.sendMessage(
+          tabId,
+          { type: 'EXTRACT_PAGE' },
+          () => {
+            // response is optional here since actual result comes via storage
+            if (chrome.runtime.lastError) {
+              console.error('Content script error:', chrome.runtime.lastError.message);
+              setIsRunning(false);
+              return;
+            }
+
+            // UI will update from storage listener, just stop loader
+            if (isPoweredOnRef.current) {
+              setIsRunning(false);
+              setHasCompletedAnalysis(true);
+            }
+          }
+        );
+      });
+
     } else {
-      // Simulation for non-extension environment
+      // Simulation fallback
       if (!isRunning) {
         setIsRunning(true);
         setHasCompletedAnalysis(false);
+
         setTimeout(() => {
-          // Simulation also respects power state
           if (isPoweredOnRef.current) {
             setIsRunning(false);
             setHasCompletedAnalysis(true);
