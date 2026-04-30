@@ -34,6 +34,13 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
     isPoweredOnRef.current = isPoweredOn;
   }, [isPoweredOn]);
 
+  // Persist selected mode so background.js can read it
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      chrome.storage.local.set({ selectedMode });
+    }
+  }, [selectedMode]);
+
   // Helper to normalize the URL to its base domain (to match WhitelistManager logic)
   const normalizeUrl = (input: string): string | null => {
     let url = input.trim();
@@ -93,8 +100,9 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
     chrome.tabs.onUpdated.addListener(onUpdated);
     chrome.tabs.onActivated.addListener(onActivated);
 
-    // 3. Initial Load: Get the last analysis data from storage
-    chrome.storage.local.get(['currentAnalysis'], (result: any) => {
+    // 3. Initial Load: Get the last analysis data and saved mode from storage
+    chrome.storage.local.get(['currentAnalysis', 'selectedMode'], (result: any) => {
+      if (result.selectedMode) setSelectedMode(result.selectedMode);
       const { data } = result.currentAnalysis || {};
       if (data) {
         if (data.category) setCategory(data.category);
