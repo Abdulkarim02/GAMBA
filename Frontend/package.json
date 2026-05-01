@@ -60,8 +60,7 @@
             "vite": "^6.4.1"
       },
       "scripts": {
-            "gen-keys": "node scripts/gen-keys.js",
-            "dev": "npm run gen-keys && vite",
-            "build": "npm run gen-keys && vite build"
+            "dev": "vite",
+            "build": "vite build"
       }
 }

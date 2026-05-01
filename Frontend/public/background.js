@@ -1,15 +1,14 @@
 'use strict';
 
-importScripts('keys.js');    // KEY_LLM, KEY_SERPAPI, KEY_TMDB, KEY_SAFEBROWSING, KEY_SEC_LLM
-importScripts('prompts.js'); // FORMAT_RULE, PROMPTS, CATEGORIES, fastClassify
+importScripts('keys.js');     // KEY_LLM, KEY_SERPAPI, KEY_TMDB, KEY_SAFEBROWSING, KEY_SEC_LLM
+importScripts('config.js');   // LLM_URL, TMDB_BASE, MODEL, VISION_MODEL, GUARD_MODEL
+importScripts('utils.js');    // parseArray, parseJSON, buildElementMap, applyRepairs, …
+importScripts('prompts.js');  // FORMAT_RULE, PROMPTS, CATEGORIES, fastClassify
+importScripts('api.js');      // fetchTMDB, fetchTMDBSeason, searchShopping, fetchScript
+importScripts('llm.js');      // callLLM, callSecLLM
+importScripts('security.js'); // analyzeSecurity, checkLlamaGuard, checkSafeBrowsing
 
 console.log('GAMBA: service worker started');
-
-const LLM_URL      = 'https://api.deepinfra.com/v1/openai/chat/completions';
-const TMDB_BASE    = 'https://api.themoviedb.org/3';
-const MODEL        = 'meta-llama/Llama-3.3-70B-Instruct-Turbo';
-const VISION_MODEL = 'meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8';
-const GUARD_MODEL  = 'meta-llama/Llama-Guard-4-12B';
 
 let currentController = null;
 
@@ -17,7 +16,7 @@ function abortCurrent() {
   if (currentController) { currentController.abort(); currentController = null; }
 }
 
-const _cache = new Map();
+const _cache    = new Map();
 const CACHE_TTL = 10 * 60 * 1000;
 
 function getCached(url) {
@@ -27,384 +26,6 @@ function getCached(url) {
 
 function setCache(url, payload) {
   _cache.set(url, { ...payload, ts: Date.now() });
-}
-
-async function callLLM(prompt, signal, { maxTokens = 2000, system = null, stream = true, screenshot = null, model: modelOverride = null } = {}) {
-  const userContent = screenshot
-    ? [ { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: screenshot } } ]
-    : prompt;
-
-  const messages = system
-    ? [{ role: 'system', content: system }, { role: 'user', content: userContent }]
-    : [{ role: 'user', content: userContent }];
-
-  const model = modelOverride ?? (screenshot ? VISION_MODEL : MODEL);
-
-  console.log('GAMBA: sending to LLM ───────────────────────');
-  console.log(prompt);
-  console.log('────────────────────────────────────────────');
-
-  const res = await fetch(LLM_URL, {
-    method:  'POST',
-    signal:  signal instanceof AbortSignal ? signal : undefined,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY_LLM}` },
-    body:    JSON.stringify({ model, messages, temperature: 0.1, top_p: 1, max_tokens: maxTokens, stream }),
-  });
-
-  if (!res.ok) {
-    console.warn('GAMBA: LLM HTTP', res.status, (await res.text().catch(() => '')).slice(0, 200));
-    return '';
-  }
-
-  if (!stream) {
-    const text = (await res.json()).choices?.[0]?.message?.content?.trim() || '';
-    console.log('GAMBA: LLM response ─────────────────────────');
-    console.log(text);
-    console.log('────────────────────────────────────────────');
-    return text;
-  }
-
-  const reader  = res.body.getReader();
-  const decoder = new TextDecoder();
-  let content   = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    for (const line of decoder.decode(value, { stream: true }).split('\n')) {
-      if (!line.startsWith('data: ')) continue;
-      const raw = line.slice(6).trim();
-      if (raw === '[DONE]') continue;
-      try {
-        const delta = JSON.parse(raw).choices?.[0]?.delta;
-        if (delta?.content) content += delta.content;
-      } catch {}
-    }
-  }
-  console.log('GAMBA: LLM response ─────────────────────────');
-  console.log(content);
-  console.log('────────────────────────────────────────────');
-  return content;
-}
-
-async function callSecLLM(prompt, signal, maxTokens = 500) {
-  return callLLM(prompt, signal, { maxTokens, stream: false, model: VISION_MODEL });
-}
-
-async function fetchTMDB(title) {
-  try {
-    const data = await fetch(
-      `${TMDB_BASE}/search/multi?api_key=${KEY_TMDB}&query=${encodeURIComponent(title)}&include_adult=false`
-    ).then(r => r.json()).catch(() => ({ results: [] }));
-
-    const hits = (data.results || []).filter(r => r.media_type === 'movie' || r.media_type === 'tv');
-    if (!hits.length) return null;
-
-    const top  = hits.reduce((b, r) => (r.vote_count || 0) > (b.vote_count || 0) ? r : b, hits[0]);
-    const d    = await fetch(`${TMDB_BASE}/${top.media_type}/${top.id}?api_key=${KEY_TMDB}`).then(r => r.json());
-    const year = (d.release_date || d.first_air_date || '').slice(0, 4);
-    const rating  = d.vote_average ? `★${d.vote_average.toFixed(1)} (${(d.vote_count || 0).toLocaleString()} votes)` : 'No rating';
-    const seasons = d.number_of_seasons ? ` | ${d.number_of_seasons} seasons` : '';
-    const genres  = d.genres?.map(g => g.name).join(', ') || '';
-
-    return `[Page title: "${title}"] → "${d.title || d.name}" (${year}) | ${top.media_type === 'tv' ? 'TV Show' + seasons : 'Movie'} | ${rating} | Genres: ${genres}`;
-  } catch { return null; }
-}
-
-async function fetchTMDBSeason(tvId, season) {
-  try {
-    const data = await fetch(`${TMDB_BASE}/tv/${tvId}/season/${season}?api_key=${KEY_TMDB}`).then(r => r.json()).catch(() => null);
-    if (!data?.episodes?.length) return null;
-    return data.episodes.map(ep => {
-      const r = (ep.vote_average && ep.vote_count >= 5) ? ep.vote_average.toFixed(1) : '?';
-      return `S${season}E${ep.episode_number} "${ep.name}" ★${r}`;
-    }).join(' | ');
-  } catch { return null; }
-}
-
-async function searchShopping(query) {
-  try {
-    const params = new URLSearchParams({ engine: 'google_shopping', q: query, api_key: KEY_SERPAPI, num: '10' });
-    const res    = await fetch(`https://serpapi.com/search?${params}`);
-    const data   = await res.json();
-    if (!res.ok) return '';
-
-    const items  = (data.shopping_results || []).slice(0, 10);
-    const prices = items.map(r => parseFloat((r.price || '').replace(/[^0-9.]/g, ''))).filter(p => p > 0);
-    const sorted = [...prices].sort((a, b) => a - b);
-    const median = sorted[Math.floor(sorted.length / 2)] || 0;
-    const clean  = median > 0 ? prices.filter(p => p >= median / 3 && p <= median * 3) : prices;
-    const avg    = clean.length ? (clean.reduce((a, b) => a + b, 0) / clean.length).toFixed(2) : null;
-    const symbol = (items.find(r => r.price)?.price || '').match(/^[^\d]*/)?.[0]?.trim() || '';
-    const lines  = items.map(r => `• ${r.title} — ${r.price} (${r.source})${r.rating ? ` ★${r.rating}` : ''}`).join('\n');
-
-    return (avg ? `Market average (${clean.length} listings): ${symbol}${avg}\n\n` : '') + lines;
-  } catch { return ''; }
-}
-
-function sanitizeJSONStrings(text) {
-  let out = '', inStr = false, esc = false;
-  for (const ch of text) {
-    if (esc)                  { out += ch; esc = false; continue; }
-    if (ch === '\\' && inStr) { out += ch; esc = true;  continue; }
-    if (ch === '"')           { inStr = !inStr; out += ch; continue; }
-    if (inStr && ch === '\n') { out += '\\n'; continue; }
-    if (inStr && ch === '\r') { out += '\\r'; continue; }
-    if (inStr && ch === '\t') { out += '\\t'; continue; }
-    out += ch;
-  }
-  return out;
-}
-
-function applyRepairs(str) {
-  // value+key merged: "g33action":"x" → "g33","action":"x"
-  str = str.replace(/"([^"]*?)(action|label|color|note)"\s*:/g,
-    (_, pre, k) => pre ? `"${pre}","${k}":` : `"${k}":`);
-  // missing '{' before "id"
-  str = str.replace(/,\s*"id"\s*:/g, ',{"id":');
-  // empty-string key: {"":"g12"} → {"id":"g12"}
-  str = str.replace(/""\s*:\s*"(g\d+)"/g, '"id":"$1"');
-  // colon dropped: "colorblue" → "color":"blue"
-  str = str.replace(/(?<=[{,]\s*)"(id|action|label|color|note)([^"]+)"/g, '"$1":"$2"');
-  return sanitizeJSONStrings(str);
-}
-
-function extractAnnotations(text, s) {
-  const results = [];
-  let i = s + 1;
-  while (i < text.length) {
-    while (i < text.length && text[i] !== '{' && text[i] !== ']') i++;
-    if (i >= text.length || text[i] === ']') break;
-
-    let depth = 0, inStr = false, esc = false, j = i;
-    while (j < text.length) {
-      const ch = text[j++];
-      if (esc)                  { esc = false; continue; }
-      if (ch === '\\' && inStr) { esc = true;  continue; }
-      if (ch === '"')           { inStr = !inStr; continue; }
-      if (!inStr && ch === '{') depth++;
-      if (!inStr && ch === '}' && --depth === 0) break;
-    }
-    if (depth !== 0) { i = j; continue; }
-
-    try {
-      const obj = JSON.parse(applyRepairs(text.slice(i, j)));
-      if (obj && typeof obj === 'object') results.push(obj);
-    } catch {}
-    i = j;
-  }
-  return results;
-}
-
-function parseArray(text) {
-  let s = -1, idx = 0;
-  while ((idx = text.indexOf('[', idx)) !== -1) {
-    if (text.startsWith('[gamba:', idx)) { idx++; continue; }
-    const rest = text.slice(idx + 1).trimStart();
-    if (rest.startsWith('{') || rest.startsWith(']')) { s = idx; break; }
-    idx++;
-  }
-  if (s === -1) return [];
-
-  const e = text.lastIndexOf(']');
-  if (e > s) {
-    try { const arr = JSON.parse(text.slice(s, e + 1)); if (Array.isArray(arr)) return arr; } catch {}
-  }
-
-  try {
-    const arr = JSON.parse(applyRepairs(e > s ? text.slice(s, e + 1) : text.slice(s)));
-    if (Array.isArray(arr)) return arr;
-  } catch {}
-
-  // lastIndexOf(']') may land inside a string value — truncate at last '}'
-  const lastBrace = text.lastIndexOf('}');
-  if (lastBrace > s) {
-    try {
-      const arr = JSON.parse(applyRepairs(text.slice(s, lastBrace + 1) + ']'));
-      if (Array.isArray(arr) && arr.length) return arr;
-    } catch {}
-  }
-
-  return extractAnnotations(text, s);
-}
-
-function buildElementMap(tagged) {
-  if (!tagged?.length) return '';
-  const vw    = tagged[0]?.vw || 1440;
-  const vh    = tagged[0]?.vh || 900;
-  const maxId = tagged[tagged.length - 1]?.id || 'g0';
-  const lines = tagged.map(e => {
-    const pos = e.w != null ? ` | x:${e.x} y:${e.y} w:${e.w} h:${e.h}` : '';
-    return `  ${e.id} | ${e.tag}${pos} | "${e.text.slice(0, 100)}"`;
-  }).join('\n');
-  return `VIEWPORT: ${vw}x${vh}px\n` +
-    `VALID IDs: g0 to ${maxId} only — any ID outside this range does not exist on the page.\n` +
-    `AVAILABLE ELEMENTS — use ONLY these IDs (id | tag | x y w h pixels | text):\n` +
-    `  x near 0 or ${vw} = sidebar/nav. x near ${Math.round(vw/2)} = main content.\n` +
-    `  Large w*h = prominent hero/card. Small w*h = label/secondary. Low y = near top.\n\n` +
-    `${lines}\n\n`;
-}
-
-function parseJSON(text, fallback) {
-  const s = text.indexOf('{'), e = text.lastIndexOf('}');
-  if (s === -1 || e === -1) return fallback;
-  try { return JSON.parse(text.slice(s, e + 1)); } catch { return fallback; }
-}
-
-
-const THREAT_TYPES = [
-  'None', 'Tracking', 'Keylogger', 'Formjacking', 'Data Exfiltration',
-  'Phishing', 'Ad Phishing', 'Ad Injection', 'Cryptomining', 'Malware',
-  'Redirect Attack', 'Clickjacking', 'Scareware', 'Session Hijacking',
-];
-const THREAT_RANK = { Safe: 0, Suspicious: 1, Malicious: 2 };
-
-async function checkSafeBrowsing(pageUrl, domains) {
-  if (!KEY_SAFEBROWSING) return [];
-  const urls = [pageUrl, ...domains.map(d => `https://${d}`)].slice(0, 500);
-  try {
-    const res = await fetch(
-      `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${KEY_SAFEBROWSING}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client: { clientId: 'gamba-extension', clientVersion: '1.0' },
-          threatInfo: {
-            threatTypes: ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE', 'POTENTIALLY_HARMFUL_APPLICATION'],
-            platformTypes: ['ANY_PLATFORM'],
-            threatEntryTypes: ['URL'],
-            threatEntries: urls.map(u => ({ url: u })),
-          },
-        }),
-      }
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.matches || [];
-  } catch { return []; }
-}
-
-// Llama Guard 4 category codes → human-readable threat types
-const GUARD_CATEGORY_MAP = {
-  S1: 'Malware',           // Violent Crimes / destructive code
-  S2: 'Phishing',          // Non-Violent Crimes — fraud, scams, phishing
-  S3: 'Data Exfiltration', // Privacy violations — stealing personal data
-  S4: 'Malware',           // Malicious code / exploitation
-  S5: 'Scareware',         // Defamation / fake warnings
-  S6: 'Ad Phishing',       // Misleading ads / financial scams
-  S7: 'Tracking',          // Privacy — behavioral tracking
-  S8: 'Session Hijacking', // Credential / session theft
-};
-
-async function checkLlamaGuard(pageUrl, html, signal) {
-  try {
-    const content = `URL: ${pageUrl}\n\nPAGE CONTENT (first 3000 chars):\n${html.slice(0, 3000)}`;
-    const res = await fetch(LLM_URL, {
-      method: 'POST',
-      signal: signal instanceof AbortSignal ? signal : undefined,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY_LLM}` },
-      body: JSON.stringify({
-        model: GUARD_MODEL,
-        messages: [{ role: 'user', content }],
-        max_tokens: 100,
-        stream: false,
-      }),
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    const text = (json.choices?.[0]?.message?.content || '').trim().toLowerCase();
-    console.log('GAMBA: Llama Guard response:', text);
-
-    if (text.startsWith('safe')) return null;
-
-    // Parse "unsafe\nS2,S5" or "unsafe\nS2\nS5"
-    const codes = [...text.matchAll(/s(\d+)/gi)].map(m => `S${m[1]}`);
-    const threats = [...new Set(codes.map(c => GUARD_CATEGORY_MAP[c]).filter(Boolean))];
-    const threatType = threats[0] || 'Malware';
-
-    return {
-      label: 'Llama Guard 4',
-      threatType,
-      summary: `Llama Guard flagged this page as unsafe. Violated categories: ${codes.join(', ')}. Mapped threats: ${threats.join(', ') || threatType}.`,
-      threats: codes.map(c => `${c}: ${GUARD_CATEGORY_MAP[c] || 'Unknown'}`),
-    };
-  } catch (e) {
-    if (e.name !== 'AbortError') console.warn('GAMBA: Llama Guard failed', e.message);
-    return null;
-  }
-}
-
-async function fetchScript(s, signal) {
-  const m = s.match(/^<script src="([^"]+)">/);
-  if (!m) return { url: 'inline', code: s };
-  const url = m[1];
-  try {
-    const res = await fetch(url, { signal });
-    if (!res.ok) return { url, code: null };
-    return { url, code: await res.text() };
-  } catch { return { url, code: null }; }
-}
-
-async function analyzeSecurity(html, scripts, signal, pageUrl = '', head = '', domains = [], forms = [], links = []) {
-  // Phase 1 (parallel): fetch script content + run Llama Guard
-  const [resolved, guardResult] = await Promise.all([
-    Promise.all(scripts.slice(0, 8).map(s => fetchScript(s, signal))),
-    checkLlamaGuard(pageUrl, html, signal),
-  ]);
-  const scannable = resolved.filter(s => s.code);
-
-  // Phase 2: single batched LLM call — analyze HTML + all scripts + produce verdict in one shot
-  const formsBlock   = forms.length   ? `\nFORMS:\n${forms.join('\n')}` : '';
-  const domainBlock  = domains.length ? `\nEXTERNAL DOMAINS: ${domains.join(', ')}` : '';
-  const linksBlock   = links.length   ? `\nEXTERNAL LINKS (display text → href):\n${links.join('\n')}` : '';
-  const scriptsBlock = scannable.length
-    ? '\n\n' + scannable.map(({ url, code }, i) => {
-        let label = url;
-        try { label = new URL(url).hostname + new URL(url).pathname; } catch {}
-        return `--- SCRIPT ${i + 1}: ${label} ---\n${code.slice(0, 8000)}`;
-      }).join('\n\n')
-    : '';
-
-  const raw = await callSecLLM(
-    `You are a cybersecurity analyst. Analyze this page and its scripts. Reply with ONLY a JSON object — no markdown, no extra text.
-
-{"category":"Safe","score":100,"threatsCount":0,"summary":"No threats detected."}
-
-Rules:
-- category: exactly "Safe" | "Suspicious" | "Malicious"
-- score: 100=completely safe, 0=extremely dangerous
-- threatsCount: number of distinct threats found
-- summary: 1-2 sentences plain English — name tracking companies if present (e.g. "Shares data with Google Analytics and LinkedIn Ads.")
-- Phishing/Malware/Formjacking/Keylogger → Malicious, score<30
-- Tracking alone → Safe
-
-PHISHING: URL domain ≠ displayed brand → Phishing. Form submits to different domain → Phishing. Login/payment fields on wrong domain → Phishing. Urgency language ("verify now", "account suspended") → Phishing. Link text says one brand but href points to a different domain → Phishing.
-SCRIPTS: keydown listener capturing input → Keylogger. Reading form fields + external fetch → Formjacking. eval/atob/obfuscated strings → Malware. Cookies/localStorage sent externally → Session Hijacking. Heavy CPU/WebAssembly loops → Cryptomining.
-
-PAGE URL: ${pageUrl}
-PAGE HEAD: ${head}${formsBlock}${domainBlock}${linksBlock}
-
-HTML:
-${html.slice(0, 15000)}${scriptsBlock}`,
-    signal, 300
-  );
-
-  const parsed       = parseJSON(raw, null);
-  let category     = ['Safe','Suspicious','Malicious'].find(c => parsed?.category === c) || 'Unknown';
-  let score        = parseInt(parsed?.score,        10) || 50;
-  let threatsCount = parseInt(parsed?.threatsCount, 10) || 0;
-  let summary      = parsed?.summary || 'Security analysis unavailable.';
-
-  if (guardResult) {
-    if (category !== 'Malicious') { category = 'Suspicious'; score = Math.min(score, 40); }
-    threatsCount++;
-    summary = `${summary} Llama Guard: ${guardResult.summary}`;
-  }
-
-  console.log('GAMBA: verdict ───', { category, score, threatsCount, summary });
-  return { category, score, threatsCount, summary };
 }
 
 async function classifyPage(url, head, signal) {
@@ -428,7 +49,7 @@ ${head}`,
       { maxTokens: 10, stream: false }
     );
 
-    const match = CATEGORIES.find(c => raw.trim().toUpperCase().includes(c));
+    const match    = CATEGORIES.find(c => raw.trim().toUpperCase().includes(c));
     const category = match || 'GENERAL';
     console.log('GAMBA: category =', category);
     return category;
@@ -438,14 +59,13 @@ ${head}`,
 }
 
 async function analyzeContent(url, html, head, signal, elemMap = '', screenshot = null) {
-  // URL heuristic skips the classifyPage LLM call for known sites
-  const fast = fastClassify(url);
+  const fast     = fastClassify(url);
   const category = fast ?? await classifyPage(url, head, signal);
-  if (fast) console.log('GAMBA: category = ', category, '(fast)');
-  const content  = elemMap + html.slice(0, 40000);
+  if (fast) console.log('GAMBA: category =', category, '(fast)');
+  const content  = elemMap + html.slice(0, 80000);
 
   if (category === 'SHOPPING') {
-    const year = new Date().getFullYear();
+    const year     = new Date().getFullYear();
     const queryRaw = await callLLM(
       `You are reading a shopping page. Reply with ONE search query to find comparable items at current market prices.
 
@@ -457,7 +77,7 @@ Rules:
 Reply with ONLY the query string or the word LISTING.
 
 PAGE:
-${content.slice(0, 15000)}`,
+${content.slice(0, 30000)}`,
       signal,
       { maxTokens: 50, stream: false }
     );
@@ -487,7 +107,7 @@ PAGE HEAD:
 ${head}
 
 PAGE CONTENT:
-${content.slice(0, 20000)}`,
+${content.slice(0, 40000)}`,
       signal,
       { maxTokens: 500, stream: false }
     );
@@ -562,13 +182,12 @@ const performAnalysis = async ({ tabId, url, html, head = '', scripts = [], tagg
   const validIds = new Set(tagged.map(t => t.id));
 
   const filterAnnotations = (annotations) => {
-    const valid = annotations.filter(a => validIds.has(a.id));
+    const valid   = annotations.filter(a => validIds.has(a.id));
     const dropped = annotations.length - valid.length;
     if (dropped > 0) console.warn(`GAMBA: dropped ${dropped} hallucinated IDs`);
     return valid;
   };
 
-  // Capture screenshot for vision-enhanced content analysis
   let screenshot = null;
   try {
     screenshot = await chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 60 });

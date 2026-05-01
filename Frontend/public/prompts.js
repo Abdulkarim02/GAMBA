@@ -72,7 +72,7 @@ Annotate exactly 5 elements using the [gamba:gN] IDs found in the page:
    The single non-obvious realization that makes an efficient solution possible — something not explicitly stated on the page.
 
 PAGE CONTENT:
-${html}`,
+${html.slice(0, 80000)}`,
   },
 
   EDUCATION: {
@@ -101,7 +101,7 @@ Annotate 5-6 elements using [gamba:gN] IDs found in the page:
    The single implication or application the reader should leave with that the page does not explicitly state.
 
 PAGE CONTENT:
-${html}`,
+${html.slice(0, 80000)}`,
   },
 
   NEWS: {
@@ -130,7 +130,7 @@ Annotate 5-6 elements using [gamba:gN] IDs found in the page:
    What belief or action is this article ultimately trying to produce — beyond what it explicitly states.
 
 PAGE CONTENT:
-${html}`,
+${html.slice(0, 80000)}`,
   },
 
   SHOPPING: {
@@ -147,7 +147,7 @@ Use ONLY IDs that belong to elements INSIDE a product card — NEVER the page he
   1. green badge "GAMBA Choice" — the [gamba:gN] on the TITLE TEXT inside the card with the best price-to-quality ratio (lowest price among items rated ≥4.0 stars).
   2. blue badge "Top Rated" — the [gamba:gN] on the TITLE TEXT inside the card with the highest rating and most reviews.
   3. orange badge "Sponsored" — the [gamba:gN] on the TITLE TEXT inside any card explicitly labelled Sponsored (skip if none visible).
-  4. purple note on the PRICE element (different ID than badge #1) inside the GAMBA Choice card: one sentence on why it beats alternatives.
+  4. purple badge "Why It Wins" — the [gamba:gN] on the PRICE element inside the GAMBA Choice card (must be a DIFFERENT ID than badge #1).
 NEVER use the same ID twice. NEVER pick IDs from the page header, breadcrumb, or sidebar.
 
 ━━ PRODUCT PAGE — annotate 5-6 elements ━━
@@ -164,7 +164,7 @@ NEVER use the same ID twice. NEVER pick IDs from the page header, breadcrumb, or
   • Red-flag element → highlight, red, label:"Red Flag" — missing info, suspicious pricing, or policy risks.
 
 PAGE CONTENT:
-${html.slice(0, 100000)}`,
+${html.slice(0, 80000)}`,
   },
 
   DOCUMENTATION: {
@@ -192,7 +192,7 @@ Annotate 5-6 elements using [gamba:gN] IDs found in the page:
 6. See Also / related links → action:"badge", color:"blue", label:"See Also"
 
 PAGE CONTENT:
-${html}`,
+${html.slice(0, 80000)}`,
   },
 
   FINANCE: {
@@ -220,7 +220,7 @@ Annotate 5-6 elements using [gamba:gN] IDs found in the page:
 6. Forecast, projection, or recommendation → action:"badge", color:"orange", label:"Forecast"
 
 PAGE CONTENT:
-${html}`,
+${html.slice(0, 80000)}`,
   },
 
   ENTERTAINMENT: {
@@ -266,7 +266,7 @@ Annotate 4-5 elements from the HERO title only:
 }
 
 PAGE CONTENT:
-${html.slice(0, 100000)}`,
+${html.slice(0, 80000)}`,
   },
 
   GENERAL: {
@@ -295,7 +295,7 @@ Annotate 5-6 elements using [gamba:gN] IDs found in the page:
    What the page is trying to get you to commit to and what you are agreeing to that may not be obvious.
 
 PAGE CONTENT:
-${html}`,
+${html.slice(0, 80000)}`,
   },
 };
 
