@@ -62,7 +62,7 @@ async function analyzeContent(url, html, head, signal, elemMap = '', screenshot 
   const fast     = fastClassify(url);
   const category = fast ?? await classifyPage(url, head, signal);
   if (fast) console.log('GAMBA: category =', category, '(fast)');
-  const content  = elemMap + html.slice(0, 80000);
+  const content  = elemMap + html;
 
   if (category === 'SHOPPING') {
     const year     = new Date().getFullYear();
@@ -77,7 +77,7 @@ Rules:
 Reply with ONLY the query string or the word LISTING.
 
 PAGE:
-${content.slice(0, 30000)}`,
+${content}`,
       signal,
       { maxTokens: 50, stream: false }
     );
@@ -107,7 +107,7 @@ PAGE HEAD:
 ${head}
 
 PAGE CONTENT:
-${content.slice(0, 40000)}`,
+${content}`,
       signal,
       { maxTokens: 500, stream: false }
     );

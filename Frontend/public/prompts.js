@@ -72,7 +72,7 @@ Annotate exactly 5 elements using the [gamba:gN] IDs found in the page:
    The single non-obvious realization that makes an efficient solution possible — something not explicitly stated on the page.
 
 PAGE CONTENT:
-${html.slice(0, 80000)}`,
+${html}`,
   },
 
   EDUCATION: {
@@ -101,7 +101,7 @@ Annotate 5-6 elements using [gamba:gN] IDs found in the page:
    The single implication or application the reader should leave with that the page does not explicitly state.
 
 PAGE CONTENT:
-${html.slice(0, 80000)}`,
+${html}`,
   },
 
   NEWS: {
@@ -130,7 +130,7 @@ Annotate 5-6 elements using [gamba:gN] IDs found in the page:
    What belief or action is this article ultimately trying to produce — beyond what it explicitly states.
 
 PAGE CONTENT:
-${html.slice(0, 80000)}`,
+${html}`,
   },
 
   SHOPPING: {
@@ -164,7 +164,7 @@ NEVER use the same ID twice. NEVER pick IDs from the page header, breadcrumb, or
   • Red-flag element → highlight, red, label:"Red Flag" — missing info, suspicious pricing, or policy risks.
 
 PAGE CONTENT:
-${html.slice(0, 80000)}`,
+${html}`,
   },
 
   DOCUMENTATION: {
@@ -192,7 +192,7 @@ Annotate 5-6 elements using [gamba:gN] IDs found in the page:
 6. See Also / related links → action:"badge", color:"blue", label:"See Also"
 
 PAGE CONTENT:
-${html.slice(0, 80000)}`,
+${html}`,
   },
 
   FINANCE: {
@@ -220,7 +220,7 @@ Annotate 5-6 elements using [gamba:gN] IDs found in the page:
 6. Forecast, projection, or recommendation → action:"badge", color:"orange", label:"Forecast"
 
 PAGE CONTENT:
-${html.slice(0, 80000)}`,
+${html}`,
   },
 
   ENTERTAINMENT: {
@@ -266,7 +266,7 @@ Annotate 4-5 elements from the HERO title only:
 }
 
 PAGE CONTENT:
-${html.slice(0, 80000)}`,
+${html}`,
   },
 
   GENERAL: {
@@ -295,7 +295,7 @@ Annotate 5-6 elements using [gamba:gN] IDs found in the page:
    What the page is trying to get you to commit to and what you are agreeing to that may not be obvious.
 
 PAGE CONTENT:
-${html.slice(0, 80000)}`,
+${html}`,
   },
 };
 
@@ -305,7 +305,7 @@ function fastClassify(url) {
   const u = url.toLowerCase();
   if (/codeforces\.|leetcode\.|hackerrank\.|atcoder\.|codechef\.|topcoder\./.test(u)) return 'COMPETITIVE_PROGRAMMING';
   if (/netflix\.com|youtube\.com\/watch|twitch\.tv|crunchyroll\.com|hulu\.com|disneyplus\.com|hotstar\.com|primevideo\.com/.test(u)) return 'ENTERTAINMENT';
-  if (/amazon\.(com|co\.uk|de|fr|ca|ae)|ebay\.(com|co\.uk)|etsy\.com|walmart\.com|aliexpress\.com/.test(u)) return 'SHOPPING';
+  if (/amazon\.(com|co\.uk|de|fr|ca|ae)|ebay\.(com|co\.uk)|etsy\.com|walmart\.com|aliexpress\.com/.test(u) && !/(?:aws|developer|advertising|press|business|music|drive|affiliate)\.amazon\./.test(u)) return 'SHOPPING';
   if (/wikipedia\.org|coursera\.org|edx\.org|udemy\.com|khanacademy\.org|brilliant\.org/.test(u)) return 'EDUCATION';
   if (/github\.com|stackoverflow\.com|developer\.mozilla\.org|docs\.python\.org|npmjs\.com/.test(u)) return 'DOCUMENTATION';
   if (/finance\.yahoo\.com|investing\.com|bloomberg\.com|nasdaq\.com|coinmarketcap\.com|tradingview\.com/.test(u)) return 'FINANCE';
