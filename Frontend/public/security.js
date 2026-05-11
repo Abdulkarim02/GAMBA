@@ -82,27 +82,21 @@ async function analyzeSecurity(html, scripts, signal, pageUrl = '', head = '', d
     : '';
 
   const raw = await callSecLLM(
-    `You are a cybersecurity analyst. Analyze this page and its scripts. Reply with ONLY a JSON object — no markdown, no extra text.
+    `Analyze this webpage for security threats. Reply with ONLY a JSON object — no markdown, no extra text.
 
-{"category":"Safe","score":100,"threatsCount":0,"summary":"No threats detected."}
+{"category":"Safe","score":100,"threatsCount":0,"summary":"What this page is and any concerns."}
 
-Rules:
-- category: exactly "Safe" | "Suspicious" | "Malicious"
-- score: 100=completely safe, 0=extremely dangerous
+- category: "Safe" | "Suspicious" | "Malicious"
+- score: 100 = completely safe, 0 = extremely dangerous
 - threatsCount: number of distinct threats found
-- summary: 1-2 sentences plain English — name tracking companies if present (e.g. "Shares data with Google Analytics and LinkedIn Ads.")
-- Phishing/Malware/Formjacking/Keylogger → Malicious, score<30
-- Tracking alone → Safe
-
-PHISHING: URL domain ≠ displayed brand → Phishing. Form submits to different domain → Phishing. Login/payment fields on wrong domain → Phishing. Urgency language ("verify now", "account suspended") → Phishing. Link text says one brand but href points to a different domain → Phishing.
-SCRIPTS: keydown listener capturing input → Keylogger. Reading form fields + external fetch → Formjacking. eval/atob/obfuscated strings → Malware. Cookies/localStorage sent externally → Session Hijacking. Heavy CPU/WebAssembly loops → Cryptomining.
+- summary: 2-3 sentences — describe what this page does and flag anything suspicious
 
 PAGE URL: ${pageUrl}
 PAGE HEAD: ${head}${formsBlock}${domainBlock}${linksBlock}
 
 HTML:
 ${html.slice(0, 40000)}${scriptsBlock}`,
-    signal, 300
+    signal, 400
   );
 
   const parsed     = parseJSON(raw, null);

@@ -134,11 +134,10 @@ ${html}`,
   },
 
   SHOPPING: {
-    system: `You are a consumer protection advisor. Help buyers make smart decisions by comparing prices to market data, summarizing reviews honestly, and flagging risks. Every price judgment must reference the market data provided. Never invent prices or reviews.`,
+    system: `You are a consumer protection advisor. Help buyers make smart decisions by summarizing reviews honestly and flagging risks. Never invent prices or reviews.`,
 
-    user: (html, marketData = '') => `${FORMAT_RULE}
+    user: (html) => `${FORMAT_RULE}
 
-${marketData ? `LIVE MARKET PRICE DATA:\n${marketData}\n\n` : ''}
 First determine page type: LISTING (multiple products in a grid), PRODUCT (single item detail), or USED (second-hand listing).
 
 ━━ LISTING PAGE — annotate exactly 4 elements ━━
@@ -151,7 +150,7 @@ Use ONLY IDs that belong to elements INSIDE a product card — NEVER the page he
 NEVER use the same ID twice. NEVER pick IDs from the page header, breadcrumb, or sidebar.
 
 ━━ PRODUCT PAGE — annotate 5-6 elements ━━
-  • Price element → note, green or red, label:"Price Check" — listed price vs lowest in market data (name the source), verdict: "Overpriced" / "Fair" / "Good deal".
+  • Price element → note, green or red, label:"Price Check" — assess if the price looks fair based on specs and reviews visible on page, verdict: "Overpriced" / "Fair" / "Good deal".
   • Rating/review element → note, blue, label:"Buyer Verdict" — what buyers consistently praise and complain about, from visible review text only.
   • Key specs element → note, purple, label:"Spec Reality" — one genuine strength and one limitation vs competitors at this price.
   • Negative review or warning → highlight, red, label:"Watch Out" — the single most repeated dealbreaker complaint.
@@ -159,7 +158,7 @@ NEVER use the same ID twice. NEVER pick IDs from the page header, breadcrumb, or
   • Warranty/returns element → note, orange, label:"Return Policy" — what it actually covers and the key limitation buyers miss.
 
 ━━ USED LISTING — annotate 3-4 elements ━━
-  • Price element → note, green or red, label:"Used Deal?" — compare to new market price, state % savings, and whether it is worth it given the condition.
+  • Price element → note, green or red, label:"Used Deal?" — assess value based on condition and listed price, and whether it is worth it.
   • Condition/description element → note, orange, label:"Condition Check" — flag vague language and list specific questions to ask before buying.
   • Red-flag element → highlight, red, label:"Red Flag" — missing info, suspicious pricing, or policy risks.
 

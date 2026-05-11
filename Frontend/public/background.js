@@ -65,30 +65,7 @@ async function analyzeContent(url, html, head, signal, elemMap = '', screenshot 
   const content  = elemMap + html;
 
   if (category === 'SHOPPING') {
-    const year     = new Date().getFullYear();
-    const queryRaw = await callLLM(
-      `You are reading a shopping page. Reply with ONE search query to find comparable items at current market prices.
-
-Rules:
-- PRODUCT page  → key specs only, not brand/model: e.g. "QD-OLED 27-inch 240Hz gaming monitor USD ${year}"
-- USED listing  → brand + model number only: e.g. "iPhone 15 Pro 256GB used"
-- LISTING page  → reply with exactly the word: LISTING
-
-Reply with ONLY the query string or the word LISTING.
-
-PAGE:
-${content}`,
-      signal,
-      { maxTokens: 50, stream: false }
-    );
-
-    const query     = queryRaw.trim().replace(/^["']|["']$/g, '');
-    const isListing = query.toUpperCase() === 'LISTING';
-    const market    = !isListing ? await searchShopping(query) : '';
-    const typeHint  = isListing
-      ? '⚑ PAGE IS A LISTING (grid of multiple products). Follow ONLY the "LISTING PAGE" section — output exactly 4 annotations.\n\n'
-      : '⚑ PAGE IS A SINGLE ITEM (product detail or used listing). Follow ONLY the "PRODUCT PAGE" or "USED LISTING" section.\n\n';
-    const raw = await callLLM(typeHint + PROMPTS.SHOPPING.user(content, market), signal, { maxTokens: 3000, system: PROMPTS.SHOPPING.system, screenshot });
+    const raw = await callLLM(PROMPTS.SHOPPING.user(content), signal, { maxTokens: 3000, system: PROMPTS.SHOPPING.system, screenshot });
     return { category, annotations: parseArray(raw) };
   }
 
