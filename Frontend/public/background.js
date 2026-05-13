@@ -11,6 +11,7 @@ importScripts('security.js'); // analyzeSecurity, checkLlamaGuard, checkSafeBrow
 console.log('GAMBA: service worker started');
 
 let currentController = null;
+let _lastContentTabId = null;
 
 function abortCurrent() {
   if (currentController) { currentController.abort(); currentController = null; }
@@ -62,7 +63,7 @@ async function analyzeContent(url, html, head, signal, elemMap = '', screenshot 
   const fast     = fastClassify(url);
   const category = fast ?? await classifyPage(url, head, signal);
   if (fast) console.log('GAMBA: category =', category, '(fast)');
-  const content  = elemMap + html;
+  const content  = html;
 
   if (category === 'SHOPPING') {
     const raw = await callLLM(PROMPTS.SHOPPING.user(content), signal, { maxTokens: 3000, system: PROMPTS.SHOPPING.system, screenshot });
@@ -136,11 +137,25 @@ function safeSendMessage(tabId, message) {
 }
 
 const performAnalysis = async ({ tabId, url, html, head = '', scripts = [], tagged = [], forceRefresh = false, domains = [], forms = [], links = [] }) => {
+  const { isPoweredOn = true, whitelist = [], selectedMode } = await chrome.storage.local.get(['isPoweredOn', 'whitelist', 'selectedMode']);
+
+  if (!isPoweredOn) {
+    console.log('GAMBA: extension is off, skipping analysis');
+    return;
+  }
+
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+    if (whitelist.some(w => hostname === w || hostname.endsWith('.' + w))) {
+      console.log('GAMBA: skipping whitelisted site', hostname);
+      return;
+    }
+  } catch {}
+
   abortCurrent();
   currentController = new AbortController();
   const { signal } = currentController;
 
-  const { selectedMode } = await chrome.storage.local.get(['selectedMode']);
   const mode = selectedMode || 'Both';
 
   if (forceRefresh) _cache.delete(url);
@@ -195,7 +210,7 @@ const performAnalysis = async ({ tabId, url, html, head = '', scripts = [], tagg
       setCache(url, { data, annotations: safe });
     }
 
-    await chrome.storage.local.set({ currentAnalysis: { url, data, timestamp: Date.now() } });
+    await chrome.storage.local.set({ currentAnalysis: { url, data, mode, timestamp: Date.now() } });
 
   } catch (err) {
     if (err.name !== 'AbortError') { console.error('GAMBA: analysis error:', err); throw err; }
@@ -215,12 +230,22 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('GAMBA: message received:', message.type);
+
+  if (message.type === 'REANALYZE') {
+    if (_lastContentTabId) {
+      chrome.tabs.sendMessage(_lastContentTabId, { type: 'FORCE_EXTRACT' }, () => { chrome.runtime.lastError; });
+    }
+    sendResponse({ success: true });
+    return;
+  }
+
   if (message.type === 'CONTENT_READY') {
     safeSendMessage(sender.tab.id, { type: 'EXTRACT_PAGE' });
     return;
   }
 
   if (message.type === 'ANALYZE_URL') {
+    if (sender.tab?.id) _lastContentTabId = sender.tab.id;
     performAnalysis({
       tabId:        sender.tab?.id,
       url:          message.url,

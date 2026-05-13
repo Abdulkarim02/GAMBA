@@ -69,11 +69,18 @@ export default function WhitelistManager({ isDarkMode, onBack }: WhitelistManage
     const [editValue, setEditValue] = useState("");
     const CONFIG_ID = 1; // Default config ID
 
+    const syncWhitelistToStorage = (data: Domain[]) => {
+        if (typeof chrome !== 'undefined' && chrome.storage) {
+            chrome.storage.local.set({ whitelist: data.map(d => d.BaseURL) });
+        }
+    };
+
     // Load whitelist from database
     const loadWhitelist = async () => {
         try {
             const data = await dbManager.getWhitelist(CONFIG_ID);
             setDomains(data);
+            syncWhitelistToStorage(data);
         } catch (error) {
             console.error("Failed to load whitelist:", error);
         }

@@ -159,17 +159,7 @@ function extractAndTag() {
     ldLines.length ? `> STRUCTURED DATA: ${ldLines.join(' || ')}` : '',
   ].filter(Boolean).join('\n');
 
-  // Large DOM fast path — flat text only, no clone (avoids freeze on YouTube/Netflix).
-  if (document.body.querySelectorAll('*').length > 5000) {
-    const md = tagged.map(e => {
-      const realEl = document.querySelector(`[data-gamba-id="${e.id}"]`);
-      const fullText = realEl ? (realEl.textContent || '').trim() : e.text;
-      return `${e.tag}: ${fullText} [gamba:${e.id}]`;
-    }).join('\n');
-    return { html: header + '\n\n' + md, tagged };
-  }
-
-  // Normal path — clone full document.body so the LLM sees ALL page text,
+  // Always use Turndown — clone full document.body so the LLM sees ALL page text,
   // not just stamped elements. Stamped elements get [gN] markers embedded inline.
   const clone = document.body.cloneNode(true);
   clone.querySelectorAll('script,style,svg,canvas,iframe,noscript,picture,video,audio,link').forEach(e => e.remove());
@@ -197,11 +187,32 @@ function extractAndTag() {
 let _analyzing = false;
 let _analyzedUrl = '';
 let _analyzedAt = 0;
+let _forceRefresh = false;
 
-function doExtract() {
+function doExtract(forced = false) {
   if (_analyzing) return;
   const url = location.href;
-  if (url === _analyzedUrl && Date.now() - _analyzedAt < 30000) return;
+  if (!forced && url === _analyzedUrl && Date.now() - _analyzedAt < 30000) return;
+
+  if (forced) {
+    _startExtract();
+    return;
+  }
+
+  chrome.storage.local.get(['isPoweredOn', 'whitelist'], (result) => {
+    if (result.isPoweredOn === false) return;
+    try {
+      const hostname = location.hostname.replace(/^www\./, '').toLowerCase();
+      const wl = result.whitelist || [];
+      if (wl.some(w => hostname === w || hostname.endsWith('.' + w))) return;
+    } catch {}
+    _startExtract();
+  });
+}
+
+function _startExtract() {
+  if (_analyzing) return;
+  const url = location.href;
   _analyzing = true;
   _analyzedUrl = url;
   _analyzedAt = Date.now();
@@ -286,7 +297,9 @@ function doExtract() {
     const links   = collectLinks();
 
     console.log('GAMBA:', html.length, 'chars,', tagged.length, 'tagged,', domains.length, 'external domains,', forms.length, 'forms,', links.length, 'external links');
-    chrome.runtime.sendMessage({ type: 'ANALYZE_URL', url: location.href, html, head: buildHead(), scripts, tagged, domains, forms, links });
+    const isForced = _forceRefresh;
+    _forceRefresh = false;
+    chrome.runtime.sendMessage({ type: 'ANALYZE_URL', url: location.href, html, head: buildHead(), scripts, tagged, domains, forms, links, forceRefresh: isForced });
 
     // Watch for late-loading content (SPAs that fetch data after initial render).
     // Fire a re-extraction once the DOM has been quiet for 500ms, or stop after 15s.
@@ -341,6 +354,12 @@ let _lastUrl = location.href;
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'EXTRACT_PAGE') doExtract();
+  if (msg.type === 'FORCE_EXTRACT') {
+    _analyzing = false;
+    _analyzedUrl = '';
+    _forceRefresh = true;
+    doExtract(true);
+  }
   if (msg.type === 'INJECT_CONTENT') {
     _analyzing = false;
     hideLoader();
@@ -485,6 +504,9 @@ chrome.storage.onChanged.addListener((changes) => {
   if (changes.currentAnalysis?.newValue) {
     _analyzing = false;
     hideLoader();
-    injectBanner(changes.currentAnalysis.newValue.data);
+    const analysis = changes.currentAnalysis.newValue;
+    if (analysis.mode !== 'AI') {
+      injectBanner(analysis.data);
+    }
   }
 });

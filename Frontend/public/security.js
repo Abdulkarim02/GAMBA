@@ -1,17 +1,6 @@
 'use strict';
 
-// Depends on: config.js (GUARD_MODEL), keys.js (KEY_LLM, KEY_SAFEBROWSING), llm.js (callLLM, callSecLLM), utils.js (parseJSON), api.js (fetchScript)
-
-const GUARD_CATEGORY_MAP = {
-  S1: 'Malware',           // Violent Crimes / destructive code
-  S2: 'Phishing',          // Non-Violent Crimes — fraud, scams, phishing
-  S3: 'Data Exfiltration', // Privacy violations — stealing personal data
-  S4: 'Malware',           // Malicious code / exploitation
-  S5: 'Scareware',         // Defamation / fake warnings
-  S6: 'Ad Phishing',       // Misleading ads / financial scams
-  S7: 'Tracking',          // Privacy — behavioral tracking
-  S8: 'Session Hijacking', // Credential / session theft
-};
+// Depends on: keys.js (KEY_SAFEBROWSING), llm.js (callSecLLM), utils.js (parseJSON), api.js (fetchScript)
 
 async function checkSafeBrowsing(pageUrl, domains) {
   if (!KEY_SAFEBROWSING) return [];
@@ -39,35 +28,8 @@ async function checkSafeBrowsing(pageUrl, domains) {
   } catch { return []; }
 }
 
-async function checkLlamaGuard(pageUrl, html, signal) {
-  try {
-    const content = `URL: ${pageUrl}\n\nPAGE CONTENT:\n${html.slice(0, 10000)}`;
-    const text = (await callLLM(content, signal, { model: GUARD_MODEL, stream: false, maxTokens: 100 })).trim().toLowerCase();
-    console.log('GAMBA: Llama Guard response:', text);
-
-    if (text.startsWith('safe')) return null;
-
-    const codes   = [...text.matchAll(/s(\d+)/gi)].map(m => `S${m[1]}`);
-    const threats = [...new Set(codes.map(c => GUARD_CATEGORY_MAP[c]).filter(Boolean))];
-    const threatType = threats[0] || 'Malware';
-
-    return {
-      label: 'Llama Guard 4',
-      threatType,
-      summary: `Llama Guard flagged this page as unsafe. Violated categories: ${codes.join(', ')}. Mapped threats: ${threats.join(', ') || threatType}.`,
-      threats: codes.map(c => `${c}: ${GUARD_CATEGORY_MAP[c] || 'Unknown'}`),
-    };
-  } catch (e) {
-    if (e.name !== 'AbortError') console.warn('GAMBA: Llama Guard failed', e.message);
-    return null;
-  }
-}
-
 async function analyzeSecurity(html, scripts, signal, pageUrl = '', head = '', domains = [], forms = [], links = []) {
-  const [resolved, guardResult] = await Promise.all([
-    Promise.all(scripts.slice(0, 15).map(s => fetchScript(s, signal))),
-    checkLlamaGuard(pageUrl, html, signal),
-  ]);
+  const resolved  = await Promise.all(scripts.slice(0, 15).map(s => fetchScript(s, signal)));
   const scannable = resolved.filter(s => s.code);
 
   const formsBlock   = forms.length   ? `\nFORMS:\n${forms.join('\n')}` : '';
@@ -82,34 +44,26 @@ async function analyzeSecurity(html, scripts, signal, pageUrl = '', head = '', d
     : '';
 
   const raw = await callSecLLM(
-    `Analyze this webpage for security threats. Reply with ONLY a JSON object — no markdown, no extra text.
+    `Look at this webpage and reply with ONLY a JSON object — no markdown, no extra text.
 
-{"category":"Safe","score":100,"threatsCount":0,"summary":"What this page is and any concerns."}
+{"safe":true,"summary":"What this page does and whether it is safe."}
 
-- category: "Safe" | "Suspicious" | "Malicious"
-- score: 100 = completely safe, 0 = extremely dangerous
-- threatsCount: number of distinct threats found
-- summary: 2-3 sentences — describe what this page does and flag anything suspicious
+- safe: true if the page is safe, false if it looks suspicious or malicious
+- summary: 2-3 sentences — what this page is and whether the user should be concerned
 
 PAGE URL: ${pageUrl}
 PAGE HEAD: ${head}${formsBlock}${domainBlock}${linksBlock}
 
 HTML:
 ${html.slice(0, 40000)}${scriptsBlock}`,
-    signal, 400
+    signal, 300
   );
 
-  const parsed     = parseJSON(raw, null);
-  let category     = ['Safe','Suspicious','Malicious'].find(c => parsed?.category === c) || 'Unknown';
-  let score        = parseInt(parsed?.score,        10) || 50;
-  let threatsCount = parseInt(parsed?.threatsCount, 10) || 0;
-  let summary      = parsed?.summary || 'Security analysis unavailable.';
-
-  if (guardResult) {
-    if (category !== 'Malicious') { category = 'Suspicious'; score = Math.min(score, 40); }
-    threatsCount++;
-    summary = `${summary} Llama Guard: ${guardResult.summary}`;
-  }
+  const parsed       = parseJSON(raw, null);
+  const category     = parsed?.safe === false ? 'Suspicious' : 'Safe';
+  const score        = parsed?.safe === false ? 30 : 90;
+  const threatsCount = 0;
+  const summary      = parsed?.summary || 'Security analysis unavailable.';
 
   console.log('GAMBA: verdict ───', { category, score, threatsCount, summary });
   return { category, score, threatsCount, summary };

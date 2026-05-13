@@ -86,15 +86,9 @@ function buildElementMap(tagged) {
   const vw    = tagged[0]?.vw || 1440;
   const vh    = tagged[0]?.vh || 900;
   const maxId = tagged[tagged.length - 1]?.id || 'g0';
-  const lines = tagged.map(e => {
-    const pos = e.w != null ? ` | x:${e.x} y:${e.y} w:${e.w} h:${e.h}` : '';
-    return `  ${e.id} | ${e.tag}${pos} | "${e.text.slice(0, 100)}"`;
-  }).join('\n');
-  return `VIEWPORT: ${vw}x${vh}px\n` +
-    `VALID IDs: g0 to ${maxId} only — any ID outside this range does not exist on the page.\n` +
-    `AVAILABLE ELEMENTS — use ONLY these IDs (id | tag | x y w h pixels | text):\n` +
-    `  x near 0 or ${vw} = sidebar/nav. x near ${Math.round(vw/2)} = main content.\n` +
-    `  Large w*h = prominent hero/card. Small w*h = label/secondary. Low y = near top.\n\n` +
+  const lines = tagged.map(e => `  ${e.id} | ${e.tag} | "${e.text.slice(0, 100)}"`).join('\n');
+  return `VALID IDs: g0 to ${maxId} only — any ID outside this range does not exist on the page.\n` +
+    `AVAILABLE ELEMENTS — use ONLY these IDs (id | tag | text):\n\n` +
     `${lines}\n\n`;
 }
 
