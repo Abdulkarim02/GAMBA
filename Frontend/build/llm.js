@@ -22,7 +22,7 @@ async function callLLM(prompt, signal, { maxTokens = 2000, system = null, stream
     method:  'POST',
     signal:  signal instanceof AbortSignal ? signal : undefined,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY_CONTENT_LLM}` },
-    body:    JSON.stringify({ model, messages, temperature: 2, top_p: 1.0, frequency_penalty: 0, presence_penalty: 0, max_tokens: maxTokens, stream }),
+    body:    JSON.stringify({ model, messages, temperature: 0.2, top_p: 1.0, frequency_penalty: 0, presence_penalty: 0, max_tokens: maxTokens, stream }),
   });
 
   if (!res.ok) {
@@ -70,7 +70,7 @@ async function callSecLLM(prompt, signal, maxTokens = 500) {
     method:  'POST',
     signal:  signal instanceof AbortSignal ? signal : undefined,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY_SEC_LLM}` },
-    body:    JSON.stringify({ model: SEC_MODEL, messages: [{ role: 'user', content: prompt }], temperature: 2, top_p: 1, max_tokens: maxTokens, stream: false }),
+    body:    JSON.stringify({ model: SEC_MODEL, messages: [{ role: 'user', content: prompt }], temperature: 0.2, top_p: 1, max_tokens: maxTokens, stream: false }),
   });
 
   if (!res.ok) {
