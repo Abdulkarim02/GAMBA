@@ -17,6 +17,7 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
   const [isPoweredOn, setIsPoweredOn] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
   const [selectedMode, setSelectedMode] = useState('Both');
+  const [isInitialized, setIsInitialized] = useState(false);
   const [confidenceScore, setConfidenceScore] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showWhitelistManager, setShowWhitelistManager] = useState(false);
@@ -33,6 +34,22 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
   useEffect(() => {
     isPoweredOnRef.current = isPoweredOn;
   }, [isPoweredOn]);
+
+  // Persist selectedMode and isPoweredOn — guarded so we don't overwrite
+  // storage with defaults before the initial async load finishes.
+  useEffect(() => {
+    if (!isInitialized) return;
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      chrome.storage.local.set({ selectedMode });
+    }
+  }, [selectedMode, isInitialized]);
+
+  useEffect(() => {
+    if (!isInitialized) return;
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      chrome.storage.local.set({ isPoweredOn });
+    }
+  }, [isPoweredOn, isInitialized]);
 
   // Helper to normalize the URL to its base domain (to match WhitelistManager logic)
   const normalizeUrl = (input: string): string | null => {
@@ -93,8 +110,10 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
     chrome.tabs.onUpdated.addListener(onUpdated);
     chrome.tabs.onActivated.addListener(onActivated);
 
-    // 3. Initial Load: Get the last analysis data from storage
-    chrome.storage.local.get(['currentAnalysis'], (result: any) => {
+    // 3. Initial Load: Get the last analysis data, saved mode, and power state from storage
+    chrome.storage.local.get(['currentAnalysis', 'selectedMode', 'isPoweredOn'], (result: any) => {
+      if (result.selectedMode) setSelectedMode(result.selectedMode);
+      if (result.isPoweredOn !== undefined) setIsPoweredOn(result.isPoweredOn);
       const { data } = result.currentAnalysis || {};
       if (data) {
         if (data.category) setCategory(data.category);
@@ -102,7 +121,14 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
         if (data.pageEdits !== undefined) setPageEdits(data.pageEdits);
         if (data.threatsCount !== undefined) setThreatsCount(data.threatsCount);
       }
+      setIsInitialized(true);
     });
+
+    // 4. Sync whitelist from IndexedDB to chrome.storage.local on every popup open
+    // so background.js always has an up-to-date list.
+    dbManager.getWhitelist(CONFIG_ID).then(wl => {
+      chrome.storage.local.set({ whitelist: wl.map(w => w.BaseURL) });
+    }).catch(() => {});
 
     // 4. Listen for Storage Changes: When background script finishes a new analysis
     const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }) => {
@@ -128,6 +154,13 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
   }, []);
 
 
+  const syncWhitelistToStorage = async () => {
+    const wl = await dbManager.getWhitelist(CONFIG_ID);
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      chrome.storage.local.set({ whitelist: wl.map(w => w.BaseURL) });
+    }
+  };
+
   const handleWhitelistToggle = async () => {
     const normalized = normalizeUrl(currentUrl);
     if (!normalized) return;
@@ -140,6 +173,7 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
         const success = await dbManager.addWebpageToWhitelist(CONFIG_ID, normalized);
         if (success) setIsWhitelisted(true);
       }
+      await syncWhitelistToStorage();
     } catch (error) {
       console.error("Failed to toggle whitelist:", error);
     }
@@ -177,33 +211,14 @@ export const GambaExtension = forwardRef<GambaExtensionRef>(function GambaExtens
       setIsRunning(true);
       setHasCompletedAnalysis(false);
 
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const tabId = tabs[0]?.id;
-
-        if (!tabId) {
-          console.error('No active tab found');
+      // Route through background — the popup is its own focused window,
+      // so querying tabs directly from here finds nothing.
+      chrome.runtime.sendMessage({ type: 'REANALYZE' }, () => {
+        void chrome.runtime.lastError; // suppress "no response" warning
+        if (isPoweredOnRef.current) {
           setIsRunning(false);
-          return;
+          setHasCompletedAnalysis(true);
         }
-
-        chrome.tabs.sendMessage(
-          tabId,
-          { type: 'EXTRACT_PAGE' },
-          () => {
-            // response is optional here since actual result comes via storage
-            if (chrome.runtime.lastError) {
-              console.error('Content script error:', chrome.runtime.lastError.message);
-              setIsRunning(false);
-              return;
-            }
-
-            // UI will update from storage listener, just stop loader
-            if (isPoweredOnRef.current) {
-              setIsRunning(false);
-              setHasCompletedAnalysis(true);
-            }
-          }
-        );
       });
 
     } else {

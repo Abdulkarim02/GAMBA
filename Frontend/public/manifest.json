@@ -11,10 +11,12 @@
     "content_scripts": [
         {
         "matches": ["<all_urls>"],
-        "js": ["content.js"]
+        "js": ["turndown.js", "content.js"],
+        "all_frames": false,
+        "run_at": "document_idle"
         }
     ],
-    "host_permissions": ["https://gamba.almanea.work/*"],
+    "host_permissions": ["<all_urls>", "https://integrate.api.nvidia.com/*", "https://api.openai.com/*", "http://localhost:8000/*", "https://serpapi.com/*", "https://api.themoviedb.org/*"],
     "background": {
         "service_worker": "background.js"
     },
