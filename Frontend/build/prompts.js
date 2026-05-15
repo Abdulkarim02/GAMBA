@@ -140,22 +140,38 @@ ${html}`,
 
 First determine page type: LISTING (multiple products in a grid), PRODUCT (single item detail), or USED (second-hand listing).
 
-━━ LISTING PAGE — annotate exactly 4 elements ━━
-The page shows a GRID of product cards. Each card has a title, price, and rating INSIDE it.
-Use ONLY IDs that belong to elements INSIDE a product card — NEVER the page heading, site logo, search bar, category nav, or filter sidebar.
-  1. green badge "GAMBA Choice" — the [gamba:gN] on the TITLE TEXT inside the card with the best price-to-quality ratio (lowest price among items rated ≥4.0 stars).
-  2. blue badge "Top Rated" — the [gamba:gN] on the TITLE TEXT inside the card with the highest rating and most reviews.
-  3. orange badge "Sponsored" — the [gamba:gN] on the TITLE TEXT inside any card explicitly labelled Sponsored (skip if none visible).
-  4. purple badge "Why It Wins" — the [gamba:gN] on the PRICE element inside the GAMBA Choice card (must be a DIFFERENT ID than badge #1).
-NEVER use the same ID twice. NEVER pick IDs from the page header, breadcrumb, or sidebar.
+━━ LISTING PAGE — one badge per product card ━━
+The page shows a GRID or LIST of product cards. Each card has a title, price, and rating INSIDE it.
+RULES:
+  ✓ Give EXACTLY ONE badge per product card — never two badges on the same card.
+  ✓ Badge the TITLE TEXT element inside each card. Use a different ID for every badge.
+  ✓ Spread badges across ALL visible product cards — every card gets one.
+  ✗ NEVER badge the page heading, search bar, category nav, filter sidebar, or any element outside a card.
+
+For each product card pick the ONE label that best describes it:
+  • green  "GAMBA Choice"   — best price-to-quality (lowest price among items rated ≥4.0 stars)
+  • blue   "Top Rated ★X.X" — highest rating with the most reviews (show actual rating)
+  • orange "Sponsored"      — only if the card is explicitly marked Sponsored
+  • red    "Overpriced"     — clearly higher price than similar items on the page for no clear reason
+  • purple "Premium Pick"   — highest-end specs or features, justified higher price
+  • blue   "Budget Pick"    — lowest price option on the page
+  • orange "Few Reviews"    — less than 50 reviews, proceed with caution
+
+One card gets one label. Choose the most useful label for each card based on what stands out about it compared to the others. Do not repeat the same label more than twice across all cards.
 
 ━━ PRODUCT PAGE — annotate 5-6 elements ━━
-  • Price element → note, green or red, label:"Price Check" — assess if the price looks fair based on specs and reviews visible on page, verdict: "Overpriced" / "Fair" / "Good deal".
-  • Rating/review element → note, blue, label:"Buyer Verdict" — what buyers consistently praise and complain about, from visible review text only.
-  • Key specs element → note, purple, label:"Spec Reality" — one genuine strength and one limitation vs competitors at this price.
-  • Negative review or warning → highlight, red, label:"Watch Out" — the single most repeated dealbreaker complaint.
+CRITICAL PLACEMENT RULES:
+  ✗ NEVER target elements inside popups, modals, shipping panels, or overlays — only the main page body.
+  ✗ NEVER use action:"note" on elements inside a specs table or features list — use action:"highlight" or action:"badge" instead, as notes break table layout.
+  ✓ For price: target the MAIN price element in the hero/purchase section — the large price shown beside the product title, NOT any price repeated inside a popup or fee breakdown panel.
+  ✓ For specs: target the product TITLE or a block-level element ABOVE the specs table, not a row inside it.
+
+  • Main price element (hero section only) → note, green or red, label:"Price Check" — is this price fair? verdict: "Overpriced" / "Fair" / "Good deal". One sentence reason.
+  • Rating/review count element → note, blue, label:"Buyer Verdict" — what buyers consistently praise and complain about, from visible review text only.
+  • Product title or feature highlight → highlight, purple, label:"Spec Reality" — one genuine strength and one limitation vs competitors at this price.
+  • Negative review or warning text → highlight, red, label:"Watch Out" — the single most repeated dealbreaker complaint.
   • Seller/fulfillment element → badge, blue or orange, label: "Sold by Amazon" | "Third-Party Seller" | "Fulfilled by Amazon" | "Ships from Abroad" | "Official Store".
-  • Warranty/returns element → note, orange, label:"Return Policy" — what it actually covers and the key limitation buyers miss.
+  • Returns/warranty text → note, orange, label:"Return Policy" — what it actually covers and the key limitation buyers miss.
 
 ━━ USED LISTING — annotate 3-4 elements ━━
   • Price element → note, green or red, label:"Used Deal?" — assess value based on condition and listed price, and whether it is worth it.
